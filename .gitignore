@@ -6,6 +6,7 @@ build/
 !**/src/test/**/build/
 
 src/main/resources/application.properties
+src/main/resources/daol-2025-firebase-adminsdk-fbsvc-dafc8a5b6b.json
 
 ### STS ###
 .apt_generated
