@@ -99,88 +99,88 @@ public class InsuranceService {
     private static Storage storage;
 
     // Google Cloud Vision API 클라이언트 싱글톤
-    static {
-        try {
-            InputStream credentialStream = new ClassPathResource("deft-approach-446702-s9-00a32e46f60e.json").getInputStream();
-            GoogleCredentials credentials = GoogleCredentials.fromStream(credentialStream)
-                    .createScoped(Arrays.asList("https://www.googleapis.com/auth/cloud-platform"));
-            storage = StorageOptions.newBuilder().setCredentials(credentials).build().getService();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
-    /**
-     * PDF에서 텍스트 추출 (Vision API OCR 사용)
-     */
-    public String extractTextFromPdf(String filePath) {
-        try {
-            String gcsInputUri = GCS_INPUT_URL + filePath;  // 입력 파일의 GCS 경로
-            System.out.println("OCR 처리 대상 파일: " + gcsInputUri);
-
-            return processOCR(filePath);
-
-        } catch (Exception e) {
-            e.printStackTrace();
-            return "Error processing PDF: " + e.getMessage();
-        }
-    }
-
-    /**
-     * Google Vision API로 OCR 수행
-     */
-    private String processOCR(String filePath) throws IOException {
-        String gcsUri = "gs://" + BUCKET_NAME + "/" + filePath;
-
-        try (ImageAnnotatorClient vision = ImageAnnotatorClient.create()) {
-            // PDF를 OCR 하기 위한 GCS 설정
-            GcsSource gcsSource = GcsSource.newBuilder().setUri(gcsUri).build();
-            InputConfig inputConfig = InputConfig.newBuilder()
-                    .setGcsSource(gcsSource)
-                    .setMimeType("application/pdf")  // PDF OCR
-                    .build();
-
-            // OCR 요청 설정
-            Feature feature = Feature.newBuilder().setType(Feature.Type.DOCUMENT_TEXT_DETECTION).build();
-            AnnotateImageRequest request = AnnotateImageRequest.newBuilder()
-                    .setImage(Image.newBuilder().setSource(ImageSource.newBuilder().setGcsImageUri(gcsUri).build()).build())
-                    .addFeatures(feature)
-                    .build();
-
-            // OCR 실행
-            List<AnnotateImageResponse> responses = vision.batchAnnotateImages(List.of(request)).getResponsesList();
-
-            StringBuilder extractedText = new StringBuilder();
-            for (AnnotateImageResponse response : responses) {
-                if (response.hasError()) {
-                    return "Error processing OCR: " + response.getError().getMessage();
-                }
-                extractedText.append(response.getFullTextAnnotation().getText()).append("\n");
-            }
-
-            return extractedText.toString();
-        }
-    }
-
-    /**
-     * GCS에서 OCR 결과 JSON 가져오기
-     */
-    public String fetchProcessedResult(String filePath) throws IOException {
-        try {
-            String resultFilePath = "terms_output/" + filePath.replace(".pdf", "") + ".json"; // 예상 결과 파일 경로
-            Blob blob = storage.get(BUCKET_NAME, resultFilePath);
-
-            if (blob == null) {
-                return "No result found for " + filePath;
-            }
-
-            return new String(blob.getContent());
-
-        } catch (Exception e) {
-            e.printStackTrace();
-            return "Error fetching result: " + e.getMessage();
-        }
-    }
+//    static {
+//        try {
+//            InputStream credentialStream = new ClassPathResource("deft-approach-446702-s9-00a32e46f60e.json").getInputStream();
+//            GoogleCredentials credentials = GoogleCredentials.fromStream(credentialStream)
+//                    .createScoped(Arrays.asList("https://www.googleapis.com/auth/cloud-platform"));
+//            storage = StorageOptions.newBuilder().setCredentials(credentials).build().getService();
+//        } catch (Exception e) {
+//            e.printStackTrace();
+//        }
+//    }
+//
+//    /**
+//     * PDF에서 텍스트 추출 (Vision API OCR 사용)
+//     */
+//    public String extractTextFromPdf(String filePath) {
+//        try {
+//            String gcsInputUri = GCS_INPUT_URL + filePath;  // 입력 파일의 GCS 경로
+//            System.out.println("OCR 처리 대상 파일: " + gcsInputUri);
+//
+//            return processOCR(filePath);
+//
+//        } catch (Exception e) {
+//            e.printStackTrace();
+//            return "Error processing PDF: " + e.getMessage();
+//        }
+//    }
+//
+//    /**
+//     * Google Vision API로 OCR 수행
+//     */
+//    private String processOCR(String filePath) throws IOException {
+//        String gcsUri = "gs://" + BUCKET_NAME + "/" + filePath;
+//
+//        try (ImageAnnotatorClient vision = ImageAnnotatorClient.create()) {
+//            // PDF를 OCR 하기 위한 GCS 설정
+//            GcsSource gcsSource = GcsSource.newBuilder().setUri(gcsUri).build();
+//            InputConfig inputConfig = InputConfig.newBuilder()
+//                    .setGcsSource(gcsSource)
+//                    .setMimeType("application/pdf")  // PDF OCR
+//                    .build();
+//
+//            // OCR 요청 설정
+//            Feature feature = Feature.newBuilder().setType(Feature.Type.DOCUMENT_TEXT_DETECTION).build();
+//            AnnotateImageRequest request = AnnotateImageRequest.newBuilder()
+//                    .setImage(Image.newBuilder().setSource(ImageSource.newBuilder().setGcsImageUri(gcsUri).build()).build())
+//                    .addFeatures(feature)
+//                    .build();
+//
+//            // OCR 실행
+//            List<AnnotateImageResponse> responses = vision.batchAnnotateImages(List.of(request)).getResponsesList();
+//
+//            StringBuilder extractedText = new StringBuilder();
+//            for (AnnotateImageResponse response : responses) {
+//                if (response.hasError()) {
+//                    return "Error processing OCR: " + response.getError().getMessage();
+//                }
+//                extractedText.append(response.getFullTextAnnotation().getText()).append("\n");
+//            }
+//
+//            return extractedText.toString();
+//        }
+//    }
+//
+//    /**
+//     * GCS에서 OCR 결과 JSON 가져오기
+//     */
+//    public String fetchProcessedResult(String filePath) throws IOException {
+//        try {
+//            String resultFilePath = "terms_output/" + filePath.replace(".pdf", "") + ".json"; // 예상 결과 파일 경로
+//            Blob blob = storage.get(BUCKET_NAME, resultFilePath);
+//
+//            if (blob == null) {
+//                return "No result found for " + filePath;
+//            }
+//
+//            return new String(blob.getContent());
+//
+//        } catch (Exception e) {
+//            e.printStackTrace();
+//            return "Error fetching result: " + e.getMessage();
+//        }
+//    }
 
     // 본인이 입력한 정보에 따라 보험 정보 가져오기
 }
