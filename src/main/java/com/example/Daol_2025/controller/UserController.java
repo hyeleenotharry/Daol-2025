@@ -23,6 +23,7 @@ public class UserController {
 
     @Autowired
     private JwtTokenProvider jwtTokenProvider;
+
     // 회원 가입
     @PostMapping("/signup")
     public AuthResponse saveUser(@RequestBody User user) throws ExecutionException, InterruptedException {

@@ -49,16 +49,16 @@ public class InsuranceController {
 
     private static final String STORAGE_PATH = "./src/main/resources/static/media/terms/";
 
-    @GetMapping("/{filename}")
-    public ResponseEntity<String> extractText(@PathVariable String filename) {
-        try {
-            File file = new File(STORAGE_PATH + filename);
-            String extractedText = insuranceService.extractTextFromPdf(filename);
-            return ResponseEntity.ok(extractedText);
-        } catch (Exception e) {
-            return ResponseEntity.status(500).body("Error processing file: " + e.getMessage());
-        }
-    }
+//    @GetMapping("/{filename}")
+//    public ResponseEntity<String> extractText(@PathVariable String filename) {
+//        try {
+//            File file = new File(STORAGE_PATH + filename);
+//            String extractedText = insuranceService.extractTextFromPdf(filename);
+//            return ResponseEntity.ok(extractedText);
+//        } catch (Exception e) {
+//            return ResponseEntity.status(500).body("Error processing file: " + e.getMessage());
+//        }
+//    }
     // 보험 가져오기
 
 }

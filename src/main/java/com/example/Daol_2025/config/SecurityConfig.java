@@ -38,7 +38,7 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable()) // CSRF 비활성화
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)) // 세션 사용 안 함
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/users/signup", "/users/login", "/insurance/").permitAll()
+                        .requestMatchers("/","/users/signup", "/users/login", "/insurance/").permitAll()
                         .requestMatchers("/insurance/save").authenticated()
                         .requestMatchers("/policy/").permitAll()
                         .requestMatchers("/policy/recommend").authenticated()
