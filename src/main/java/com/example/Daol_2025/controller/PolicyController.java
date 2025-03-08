@@ -6,12 +6,15 @@ import com.example.Daol_2025.domain.User;
 import com.example.Daol_2025.dto.RecommendationResponse;
 import com.example.Daol_2025.service.PolicyService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.gson.JsonObject;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.net.URISyntaxException;
 import java.util.Base64;
+import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/policy/")
@@ -27,8 +30,9 @@ public class PolicyController {
         return ResponseEntity.ok(policiesJson);
     }
 
+    // 느림 - bigquery 나 vertex ai 사용 요망
     @GetMapping("/recommend")
-    public ResponseEntity<String> getRecommendedPolicy(@RequestHeader("Authorization") String token) {
+    public List<Map<String, Object>> getRecommendedPolicy(@RequestHeader("Authorization") String token) {
         try {
             // 사용자 정보 디코딩 (토큰 기반)
             User user = decodeToken(token);
@@ -37,11 +41,12 @@ public class PolicyController {
             String policiesJson = policyService.getPolicies();
 
             // 사용자 맞춤 추천 결과 가져오기
-            String recommendations = policyService.getRecommendation(user, policiesJson);
+            List<Map<String, Object>> recommendations = policyService.getRecommendation(user, policiesJson);
 
-            return ResponseEntity.ok(recommendations);
+            return recommendations;
         } catch (Exception e) {
-            return ResponseEntity.status(500).body("Error: " + e.getMessage());
+            System.out.println(e);
+            return null;
         }
     }
 

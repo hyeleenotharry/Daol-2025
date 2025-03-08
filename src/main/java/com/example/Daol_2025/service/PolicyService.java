@@ -1,18 +1,27 @@
 package com.example.Daol_2025.service;
 
 import com.example.Daol_2025.domain.User;
+import com.google.cloud.firestore.DocumentSnapshot;
+import com.google.cloud.firestore.Firestore;
+import com.google.cloud.firestore.FirestoreOptions;
+import com.google.common.reflect.TypeToken;
+import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonSyntaxException;
 import org.springframework.beans.factory.annotation.Value;
 import com.google.gson.JsonObject;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.PropertySource;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 @Service
 public class PolicyService {
@@ -35,6 +44,7 @@ public class PolicyService {
         return GEMINI_API_URL + "?key=" + GEMINI_SERVICE_KEY;
     }
 
+    // 정책 받아오기
     public String getPolicies() throws URISyntaxException {
         RestTemplate restTemplate = new RestTemplate();
         String policy_api = this.getPolicyApiUrl();
@@ -46,21 +56,89 @@ public class PolicyService {
         return response.getBody();
     }
 
-    public String getRecommendation(User user, String policiesJson){
+    // gemini 로 추천 정책 - 느려서... 최적화를 하거나 배포 떄 비동기로 처리하거나 redis 로 해봐?
+    public List<Map<String, Object>> getRecommendation(User user, String policiesJson) {
         RestTemplate restTemplate = new RestTemplate();
         HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
 
-        headers.set("Content-Type", "application/json");
-        // Gemini API 프롬프트 구성
-        JsonObject requestBody = new JsonObject();
-        requestBody.addProperty("prompt", "User Profile: " + user.toString() + "\n\n" +
+        // 요청 JSON 구성
+        JsonObject messagePart = new JsonObject();
+        messagePart.addProperty("text", "User Profile: " + user.toString() + "\n\n" +
                 "Policies: " + policiesJson + "\n\n" +
-                "I want to get 10 recommended policies considering User Profile. You should return result with json file without any additional text or description.");
+                "I want to get 10 recommended policies in JSON array format. " +
+                "Each object should include: {\"서비스명\", \"상세조회URL\", \"서비스목적요약\", \"지원내용\", \"지원대상\", \"신청기한\", \"신청방법\"}. " +
+                "Do not include additional text before or after JSON.");
+
+        JsonArray partsArray = new JsonArray();
+        partsArray.add(messagePart);
+
+        JsonObject userMessage = new JsonObject();
+        userMessage.addProperty("role", "user");
+        userMessage.add("parts", partsArray);
+
+        JsonArray contentsArray = new JsonArray();
+        contentsArray.add(userMessage);
+
+        JsonObject requestBody = new JsonObject();
+        requestBody.add("contents", contentsArray);
 
         HttpEntity<String> request = new HttpEntity<>(requestBody.toString(), headers);
-        String gemini_api = this.getGeminiApiUrl();
-        ResponseEntity<String> response = restTemplate.postForEntity(gemini_api, request, String.class);
+        String geminiApiUrl = GEMINI_API_URL + "?key=" + GEMINI_SERVICE_KEY;
 
-        return response.getBody();
+        Map<String, Object> response = restTemplate.postForObject(geminiApiUrl, request, Map.class);
+
+        // 응답 파싱
+        try {
+
+            return extractPolicies(response);
+        } catch (Exception e){
+            System.out.println(e);
+            return null;
+        }
+    }
+
+    private List<Map<String, Object>> extractPolicies(Map<String, Object> response) {
+        if (response == null || !response.containsKey("candidates")) {
+            return List.of();
+        }
+
+        List<Map<String, Object>> candidates = (List<Map<String, Object>>) response.get("candidates");
+
+        if (candidates.isEmpty()) {
+            return List.of();
+        }
+
+        Map<String, Object> candidate = candidates.get(0);
+
+        Object contentObj = candidate.get("content");
+        if (!(contentObj instanceof Map)) {
+            return List.of();
+        }
+
+        Map<String, Object> contentMap = (Map<String, Object>) contentObj;
+        Object partsObj = contentMap.get("parts");
+        if (!(partsObj instanceof List)) {
+            return List.of();
+        }
+
+        List<?> partsList = (List<?>) partsObj;
+        if (partsList.isEmpty() || !(partsList.get(0) instanceof Map)) {
+            return List.of();
+        }
+
+        Map<String, Object> firstPart = (Map<String, Object>) partsList.get(0);
+        Object textObj = firstPart.get("text");
+        if (!(textObj instanceof String)) {
+            return List.of();
+        }
+
+        String jsonText = ((String) textObj).replaceAll("```json", "").replaceAll("```", "").trim();
+        try {
+            return new Gson().fromJson(jsonText, new TypeToken<List<Map<String, Object>>>() {}.getType());
+        } catch (JsonSyntaxException e) {
+            System.err.println("JSON 파싱 오류: " + e.getMessage());
+            return List.of();
+        }
     }
 }
