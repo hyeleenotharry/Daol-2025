@@ -5,9 +5,9 @@ build/
 !**/src/main/**/build/
 !**/src/test/**/build/
 
-src/main/resources/application.properties
-src/main/resources/daol-2025-firebase-adminsdk-fbsvc-dafc8a5b6b.json
-src/main/resources/deft-approach-446702-s9-00a32e46f60e.json
+#src/main/resources/application.properties
+#src/main/resources/daol-2025-firebase-adminsdk-fbsvc-dafc8a5b6b.json
+#src/main/resources/deft-approach-446702-s9-00a32e46f60e.json
 
 ### STS ###
 .apt_generated
@@ -39,3 +39,7 @@ out/
 
 ### VS Code ###
 .vscode/
+
+src/main/resources/application.properties
+src/main/resources/daol-2025-firebase-adminsdk-fbsvc-dafc8a5b6b.json
+src/main/resources/deft-approach-446702-s9-00a32e46f60e.json
