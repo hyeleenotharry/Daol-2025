@@ -114,4 +114,20 @@ public class JwtTokenProvider implements InitializingBean {
 
         return new UsernamePasswordAuthenticationToken(userDetails, token, userDetails.getAuthorities());
     }
+
+    public String getUserIdFromToken(String token) {
+        try {
+            // `auth0.jwt` 라이브러리로 JWT 검증 및 디코딩
+            JWTVerifier verifier = JWT.require(Algorithm.HMAC256(secretKey))
+                    .withSubject("user-auth")
+                    .build();
+
+            DecodedJWT decodedJWT = verifier.verify(token);
+
+            // "userId" 클레임 값 추출
+            return decodedJWT.getClaim("userId").asString();
+        } catch (JWTVerificationException e) {
+            throw new IllegalArgumentException("유효하지 않은 JWT 토큰입니다.", e);
+        }
+    }
 }

@@ -10,25 +10,35 @@ import com.example.Daol_2025.domain.User;
 import com.example.Daol_2025.dto.AuthResponse;
 import com.example.Daol_2025.dto.LoginRequest;
 import com.example.Daol_2025.security.JwtTokenProvider;
+import com.google.api.core.ApiFuture;
+import com.google.api.core.ApiFutureCallback;
+import com.google.api.core.ApiFutures;
+import com.google.cloud.firestore.CollectionReference;
+import com.google.cloud.firestore.DocumentReference;
+import com.google.cloud.firestore.DocumentSnapshot;
+import com.google.common.util.concurrent.MoreExecutors;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
+import com.google.firebase.auth.FirebaseToken;
 import com.google.firebase.auth.UserRecord;
 import com.google.firebase.database.*;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.configurationprocessor.json.JSONObject;
 import org.springframework.security.web.webauthn.api.AuthenticatorResponse;
 import org.springframework.stereotype.Service;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
-import java.util.Map;
+import java.lang.reflect.Field;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import com.google.common.util.concurrent.FutureCallback;
 
 
 @Service
@@ -36,6 +46,8 @@ public class UserService {
 
     private final DatabaseReference usersRef;
     private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
+    @Autowired
+    private FirebaseDatabase firebaseDatabase;
 
     @Autowired
     public UserService(FirebaseDatabase firebaseDatabase) {
@@ -67,7 +79,6 @@ public class UserService {
             @Override
             public void onDataChange(DataSnapshot dataSnapshot) {
                 if (dataSnapshot.exists()) {
-
                     future.completeExceptionally(new IllegalArgumentException("이미 존재하는 사용자입니다."));
                 } else {
                     future.complete(dataSnapshot);
@@ -196,7 +207,7 @@ public class UserService {
     }
 
     // 사용자 조회 by id
-    public User getUserById(String userId, String password) throws ExecutionException, InterruptedException {
+    public User getUserById(String userId) throws ExecutionException, InterruptedException {
 
         CompletableFuture<DataSnapshot> future = new CompletableFuture<>();
 
@@ -218,13 +229,74 @@ public class UserService {
         // 비밀번호 비교
         BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
 
-        if (user != null && encoder.matches(password, user.getPassword())) {
+        if (user != null) {
             return user;
         } else {
             throw new RuntimeException("Id 나 Password 가 유효하지 않습니다.");
         }
     }
 
-    // 토큰 발급
+    // 토큰으로 user 가져오기
+    public User getUserByToken(String token) throws ExecutionException, InterruptedException, FirebaseAuthException {
+        String uid = jwtTokenProvider.getUserIdFromToken(token);
+
+        return getUserById(uid);
+    }
+
+    // 유저정보 수정
+    public String updateUserProfile(String token, User newUser) throws ExecutionException, InterruptedException, FirebaseAuthException {
+        User user = getUserByToken(token);
+        System.out.println(user);
+
+        CompletableFuture<Void> future = new CompletableFuture<>();
+
+        Map<String, Object> updates = new HashMap<>();
+
+        // TODO : 반복문으로 newUser 객체에 있는 필드 updates 에 put 하기
+        updates.put("userId", newUser.getUserId());
+        updates.put("password", encoder.encode(newUser.getPassword())); // 비밀번호 업데이트
+
+        usersRef.addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override
+            public void onDataChange(DataSnapshot dataSnapshot) {
+
+                try {
+                    System.out.println(user);
+                    System.out.println(updates);
+                    // `updateChildrenAsync()` 호출
+                    ApiFuture<Void> apiFuture = usersRef.child(user.getUserId()).updateChildrenAsync(updates);
+
+                    // `ApiFutureCallback` 사용하여 올바른 타입 맞추기
+                    ApiFutures.addCallback(apiFuture, new ApiFutureCallback<Void>() {
+                        @Override
+                        public void onSuccess(Void result) {
+                            future.complete(null); // 성공하면 CompletableFuture 완료
+                        }
+
+                        @Override
+                        public void onFailure(Throwable t) {
+                            future.completeExceptionally(t); // 실패하면 예외 발생
+                        }
+                    }, MoreExecutors.directExecutor());
+
+                } catch (Exception e) {
+                    future.completeExceptionally(new RuntimeException("존재하지 않는 사용자입니다."));
+                }
+            }
+
+            @Override
+            public void onCancelled(DatabaseError databaseError) {
+                future.completeExceptionally(new RuntimeException(databaseError.getMessage()));
+            }
+        });
+        future.get();
+        return "사용자 정보 업데이트 완료";
+    }
+
+    // 스크랩
 
 }
+
+
+
+
