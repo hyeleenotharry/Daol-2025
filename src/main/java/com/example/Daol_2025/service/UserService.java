@@ -46,6 +46,8 @@ public class UserService {
 
     private final DatabaseReference usersRef;
     private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
+    private final DatabaseReference userIdIndexRef = FirebaseDatabase.getInstance().getReference("userIdIndex");
+
     @Autowired
     private FirebaseDatabase firebaseDatabase;
 
@@ -69,13 +71,16 @@ public class UserService {
     // 회원가입
     // Firebase Database paths must not contain '.', '#', '$', '[', or ']' 문자 금지
     public AuthResponse registerUser(User user) throws ExecutionException, InterruptedException {
+        // 1. userId 유효성 검사 ('.', '#', '$', '[', ']' 사용 불가)
         if (user.getUserId().matches(".*[.#$\\[\\]].*")) {
             throw new IllegalArgumentException("아이디나 비밀번호에서 '.', '#', '$', '[', ']' 를 제외하고 입력해주세요");
         }
 
         CompletableFuture<DataSnapshot> future = new CompletableFuture<>();
 
-        usersRef.child(user.getUserId()).addListenerForSingleValueEvent(new ValueEventListener() {
+
+        // 2. userIdIndex에서 중복 체크 (userId가 이미 사용 중인지 확인)
+        userIdIndexRef.child(user.getUserId()).addListenerForSingleValueEvent(new ValueEventListener() {
             @Override
             public void onDataChange(DataSnapshot dataSnapshot) {
                 if (dataSnapshot.exists()) {
@@ -92,11 +97,15 @@ public class UserService {
         });
 
         future.get();
-        // 비밀번호 해싱
+
+        // 3. Firebase에서 자동 생성된 키 사용
+        String firebaseKey = usersRef.push().getKey();
+
+        // 4. 비밀번호 해싱
         user.setPassword(encoder.encode(user.getPassword()));
 
-        if(user.getAddress() == null) {
-            // 위치 설정
+        // 5. 주소 정보 설정 (위치 정보 가져오기)
+        if (user.getAddress() == null) {
             UserRegionService userRegionService = new UserRegionService();
             String location = userRegionService.getAddressFromPython();
 
@@ -107,23 +116,49 @@ public class UserService {
             }
         }
 
-        usersRef.child(user.getUserId()).setValueAsync(user);
+        // 6. users 테이블에 저장 (Firebase 키 기반 저장)
+        usersRef.child(firebaseKey).setValueAsync(user);
 
+        // 7. userIdIndex 테이블에 (userId → Firebase 키) 저장
+        userIdIndexRef.child(user.getUserId()).setValueAsync(firebaseKey);
+
+        // 8. JWT 토큰 발급 후 반환
         return jwtTokenProvider.generateTokens(user.getUserId());
     }
+
 
     // 로그인
     public AuthResponse login(String userId, String password) throws ExecutionException, InterruptedException {
         CompletableFuture<DataSnapshot> future = new CompletableFuture<>();
 
-        usersRef.child(userId).addListenerForSingleValueEvent(new ValueEventListener() {
+        // 1. userIdIndex에서 Firebase 키 찾기 (O(1) 조회)
+        userIdIndexRef.child(userId).addListenerForSingleValueEvent(new ValueEventListener() {
             @Override
             public void onDataChange(DataSnapshot dataSnapshot) {
                 if (!dataSnapshot.exists()) {
                     future.completeExceptionally(new IllegalArgumentException("존재하지 않는 사용자입니다."));
-                } else {
-                    future.complete(dataSnapshot);
+                    return;
                 }
+
+                // Firebase 키 가져오기
+                String firebaseKey = dataSnapshot.getValue(String.class);
+
+                // 2. users 테이블에서 해당 Firebase 키를 기반으로 유저 정보 조회
+                usersRef.child(firebaseKey).addListenerForSingleValueEvent(new ValueEventListener() {
+                    @Override
+                    public void onDataChange(DataSnapshot userSnapshot) {
+                        if (!userSnapshot.exists()) {
+                            future.completeExceptionally(new IllegalArgumentException("존재하지 않는 사용자입니다."));
+                            return;
+                        }
+                        future.complete(userSnapshot);
+                    }
+
+                    @Override
+                    public void onCancelled(DatabaseError error) {
+                        future.completeExceptionally(new RuntimeException("Database error: " + error.getMessage()));
+                    }
+                });
             }
 
             @Override
@@ -139,8 +174,10 @@ public class UserService {
             throw new IllegalArgumentException("아이디 또는 비밀번호가 올바르지 않습니다.");
         }
 
+        // JWT 토큰 발급 후 반환
         return jwtTokenProvider.generateTokens(userId);
     }
+
 
 //    // JWT 생성 메서드 (Access Token & Refresh Token)
 //    private AuthResponse generateTokens(String userId) {
@@ -208,13 +245,31 @@ public class UserService {
 
     // 사용자 조회 by id
     public User getUserById(String userId) throws ExecutionException, InterruptedException {
-
         CompletableFuture<DataSnapshot> future = new CompletableFuture<>();
 
-        usersRef.child(userId).addListenerForSingleValueEvent(new ValueEventListener() {
+        // userIdIndex에서 firebaseKey 가져오기
+        userIdIndexRef.child(userId).addListenerForSingleValueEvent(new ValueEventListener() {
             @Override
-            public void onDataChange(DataSnapshot snapshot) {
-                future.complete(snapshot);
+            public void onDataChange(DataSnapshot indexSnapshot) { // indexSnapshot 에서 id 가 userId 인 datasnapshor 가져오기
+                if (!indexSnapshot.exists()) {
+                    future.completeExceptionally(new RuntimeException("존재하지 않는 사용자입니다."));
+                    return;
+                }
+
+                String firebaseKey = indexSnapshot.getValue(String.class);
+
+                // 해당 firebaseKey로 users 테이블 조회
+                usersRef.child(firebaseKey).addListenerForSingleValueEvent(new ValueEventListener() {
+                    @Override
+                    public void onDataChange(DataSnapshot userSnapshot) {
+                        future.complete(userSnapshot);
+                    }
+
+                    @Override
+                    public void onCancelled(DatabaseError error) {
+                        future.completeExceptionally(new RuntimeException(error.getMessage()));
+                    }
+                });
             }
 
             @Override
@@ -225,9 +280,6 @@ public class UserService {
 
         DataSnapshot snapshot = future.get();
         User user = snapshot.getValue(User.class);
-
-        // 비밀번호 비교
-        BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
 
         if (user != null) {
             return user;
@@ -246,42 +298,46 @@ public class UserService {
     // 유저정보 수정
     public String updateUserProfile(String token, User newUser) throws ExecutionException, InterruptedException, FirebaseAuthException {
         User user = getUserByToken(token);
-        System.out.println(user);
+        System.out.println("ORIGIN USER : " + user);
 
         CompletableFuture<Void> future = new CompletableFuture<>();
 
-        Map<String, Object> updates = new HashMap<>();
-
-        // TODO : 반복문으로 newUser 객체에 있는 필드 updates 에 put 하기
-        updates.put("userId", newUser.getUserId());
-        updates.put("password", encoder.encode(newUser.getPassword())); // 비밀번호 업데이트
-
-        usersRef.addListenerForSingleValueEvent(new ValueEventListener() {
+        // userIdIndex에서 Firebase 키 찾기 (O(1) 조회)
+        userIdIndexRef.child(user.getUserId()).addListenerForSingleValueEvent(new ValueEventListener() {
             @Override
             public void onDataChange(DataSnapshot dataSnapshot) {
-
-                try {
-                    System.out.println(user);
-                    System.out.println(updates);
-                    // `updateChildrenAsync()` 호출
-                    ApiFuture<Void> apiFuture = usersRef.child(user.getUserId()).updateChildrenAsync(updates);
-
-                    // `ApiFutureCallback` 사용하여 올바른 타입 맞추기
-                    ApiFutures.addCallback(apiFuture, new ApiFutureCallback<Void>() {
-                        @Override
-                        public void onSuccess(Void result) {
-                            future.complete(null); // 성공하면 CompletableFuture 완료
-                        }
-
-                        @Override
-                        public void onFailure(Throwable t) {
-                            future.completeExceptionally(t); // 실패하면 예외 발생
-                        }
-                    }, MoreExecutors.directExecutor());
-
-                } catch (Exception e) {
+                if (!dataSnapshot.exists()) {
                     future.completeExceptionally(new RuntimeException("존재하지 않는 사용자입니다."));
+                    return;
                 }
+
+                // Firebase 키 가져오기
+                String firebaseKey = dataSnapshot.getValue(String.class);
+
+                Map<String, Object> updates = new HashMap<>();
+                updates.put("userId", newUser.getUserId());  // 🔥 userId 변경 가능
+                updates.put("name", newUser.getName());
+                updates.put("password", encoder.encode(newUser.getPassword()));
+                updates.put("address", newUser.getAddress());
+
+                // 2. users 테이블에서 Firebase 키 기반으로 업데이트 실행
+                ApiFuture<Void> apiFuture = usersRef.child(firebaseKey).updateChildrenAsync(updates);
+                ApiFutures.addCallback(apiFuture, new ApiFutureCallback<Void>() {
+                    @Override
+                    public void onSuccess(Void result) {
+                        // 3. userId가 변경되었다면 userIdIndex도 업데이트
+                        if (!user.getUserId().equals(newUser.getUserId())) {
+                            userIdIndexRef.child(user.getUserId()).removeValueAsync();
+                            userIdIndexRef.child(newUser.getUserId()).setValueAsync(firebaseKey);
+                        }
+                        future.complete(null);
+                    }
+
+                    @Override
+                    public void onFailure(Throwable t) {
+                        future.completeExceptionally(t);
+                    }
+                }, MoreExecutors.directExecutor());
             }
 
             @Override
@@ -289,9 +345,12 @@ public class UserService {
                 future.completeExceptionally(new RuntimeException(databaseError.getMessage()));
             }
         });
+
         future.get();
         return "사용자 정보 업데이트 완료";
     }
+
+
 
     // 스크랩
 

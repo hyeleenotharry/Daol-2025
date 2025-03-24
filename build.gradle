@@ -59,6 +59,10 @@ dependencies {
 	implementation 'com.google.auth:google-auth-library-oauth2-http:1.22.0'
 	implementation 'com.google.guava:guava:32.0.1-jre'
 
+	implementation 'org.apache.pdfbox:pdfbox:2.0.27' // PDF 처리용
+	implementation 'com.fasterxml.jackson.core:jackson-databind'
+
+
 }
 
 tasks.named('test') {
